@@ -43,40 +43,52 @@ import math
 #import threading
 #import thread
 
-from threading import Thread
 
-class coordinate():
+class Coordinate():
 	def __init__(self, lat, lon):
 		self.lat = lat
 		self.lon = lon
 		
-	def from_dd(self, lat, lon):
+	def from_d(self, lat, lon):
 		self.lat = lat
 		self.lon = lon
 		
-	def from_ddmm(self, latdd, latmm, londd, lonmm):
+	def from_dm(self, latdd, latmm, londd, lonmm):
 		self.lat = latdd + (latmm/60)
 		self.lon = londd + (lonmm/60)
 		
 	def from_dm_array(self, lat, lon):
-		self.from_ddmm(lat[0]*10 + lat[1], 
+		self.from_dm(lat[0]*10 + lat[1],
 			float(str(lat[2]) + str(lat[3]) + "." + str(lat[4]) + str(lat[5]) + str(lat[6])),
 			lon[0] * 100 + lon[1] * 10 + lon[2],
 			float(str(lon[3]) + str(lon[4]) + "." + str(lon[5]) + str(lon[6]) + str(lon[7])))
+
+	def from_d_array(self, lat, lon):
+		self.lat = float("%d%d.%d%d%d%d" % tuple(lat))
+		self.lon = float("%d%d%d.%d%d%d%d" % tuple(lon))
 			
 	def to_dm_array(self):
-		[[lat_d, lat_m],[lon_d, lon_m]] = self.to_ddmm()
+		[[lat_d, lat_m],[lon_d, lon_m]] = self.to_dm()
 		
 		p = re.compile('^(\d?)(\d)(\d) (\d)(\d)\.(\d)(\d)(\d)$')
 		d_lat = p.search("%02d %06.3f" % (lat_d, lat_m))
-		#print "%06.3f" % lat_m
 		d_lon = p.search("%03d %06.3f" % (lon_d, lon_m))
 		return [
 			[d_lat.group(i) for i in range (2, 9)],
 			[d_lon.group(i) for i in range (1, 9)]
 			]
+
+	def to_d_array(self):
+
+		p = re.compile('^(\d?)(\d)(\d).(\d)(\d)(\d)(\d)$')
+		d_lat = p.search("%08.4f" % self.lat)
+		d_lon = p.search("%08.4f" % self.lon)
+		return [
+			[d_lat.group(i) for i in range (2, 7)],
+			[d_lon.group(i) for i in range (1, 7)]
+			]
 		
-	def to_ddmm(self):
+	def to_dm(self):
 		return [ [int(math.floor(self.lat)), (self.lat - math.floor(self.lat)) * 60] ,
 			[int(math.floor(self.lon)), (self.lon - math.floor(self.lon)) * 60] ]
 	
@@ -92,7 +104,19 @@ class coordinate():
 		bearing = math.degrees(math.atan2(y, x))
 		
 		return (360 + bearing) % 360
-		
+
+	def get_lat(self, format):
+		if format == Gui.FORMAT_D:
+			return "%7.4f°" % self.lat
+		elif format == Gui.FORMAT_DM:
+			return "%2d° %06.3f" % (int(math.floor(self.lat)), (self.lat - math.floor(self.lat)) * 60)
+
+	def get_lon(self, format):
+		if format == Gui.FORMAT_D:
+			return "%8.4f°" % self.lon
+		elif format == Gui.FORMAT_DM:
+			return "%3d° %06.3f" % (int(math.floor(self.lon)), (self.lon - math.floor(self.lon)) * 60)
+
 	def distance_to (self, target):
 		R = 6371*1000;
 		dlat = math.radians(target.lat-self.lat);
@@ -103,7 +127,7 @@ class coordinate():
 		
 		
 		
-class updown():
+class Updown():
 	def __init__(self, table, position):
 		self.value = int(0)
 		self.label = gtk.Label("0")
@@ -132,57 +156,116 @@ class updown():
 		
 	def update(self):
 		self.label.set_text(str(self.value))
-		
+
+class Updown_Rows():
+	def __init__(self, format, coord):
+		self.format = format
+		if format == Gui.FORMAT_DM:
+			[init_lat, init_lon] = coord.to_dm_array()
+		elif format == Gui.FORMAT_D:
+			[init_lat, init_lon] = coord.to_d_array()
+		[self.table_lat, self.chooser_lat] = self.generate_table(False, init_lat)
+		[self.table_lon, self.chooser_lon] = self.generate_table(True, init_lon)
+
+	def get_value(self):
+		coord = Coordinate(0,0)
+		lat_values = [ud.value for ud in self.chooser_lat]
+		lon_values = [ud.value for ud in self.chooser_lon]
+		if self.format == Gui.FORMAT_DM:
+			coord.from_dm_array(lat_values, lon_values)
+		elif self.format == Gui.FORMAT_D:
+			coord.from_d_array(lat_values, lon_values)
+		return coord
+
+	def generate_table(self, is_long, initial_value):
+		interrupt = {}
+		if self.format == Gui.FORMAT_DM and not is_long:
+			num = 7
+			interrupt[2] =  "°"
+			interrupt[5] = ","
+		elif self.format == Gui.FORMAT_DM and is_long:
+			num = 8
+			interrupt[3] = "°"
+			interrupt[6] = ","
+		elif self.format == Gui.FORMAT_D and not is_long:
+			num = 6
+			interrupt[2] = ","
+		elif self.format == Gui.FORMAT_D and is_long:
+			num = 7
+			interrupt[3] = ","
+
+		table = gtk.Table(3, 9, False)
+		chooser = []
+		cn = 0
+		for i in range(num + len(interrupt)):
+			if i in interrupt:
+				table.attach(gtk.Label(interrupt[i]), i, i+1, 1, 2)
+			else:
+				ud = Updown(table, i)
+				if cn < len(initial_value):
+					ud.set_value(initial_value[cn])
+				chooser.append(ud)
+				cn = cn + 1
+
+		return [table, chooser]
+
 		
 
-class gui():
+class Gui():
+	FORMAT_D = 0
+	FORMAT_DM = 1
+    
 	def __init__(self):
-		self.window = gtk.Window()
-		self.window.connect ("destroy", self.destroy)
+		# Setting up some variables
 		self.drawing_area_configured = False
 		self.status = "?"
 		self.has_fix = False
-		
-		c1 = coordinate(49.35454, 6.23456)
-		self.target_position = c1
-		#c2 = self.input_target()
-		#
-		#print "Distance: " + str(c1.distance_to(c2))
-		#print "Bearing: " + str(c1.bearing_to(c2))
-		#return
-		
+		self.format = self.FORMAT_D
+		self.gps_position = Coordinate(0, 0)
+		self.target_position = Coordinate(0, 0)
+		self.gps_bearing = 0.0
+
+        # Initialize Window
+		self.window = gtk.Window()
+		self.window.connect ("destroy", self.destroy)
 		self.window.set_title('Simple Geocaching Tool for Linux')
-		table = gtk.Table(6, 2, False)
+
+		table = gtk.Table(6, 3, False)
 		self.window.add(table)
 		
 		global labelLatLon
-		labelLatLon = gtk.Label("Current: 49 45.2345 003 23 543")
-		table.attach(labelLatLon, 0, 2 ,3 ,4)
+		labelLatLon = gtk.Label("?")
+		table.attach(labelLatLon, 0, 3 ,3 ,4)
 		
 		
 		global labelTargetLatLon
 		labelTargetLatLon = gtk.Label("-")
-		table.attach(labelTargetLatLon, 0, 2 ,4 ,5)
+		table.attach(labelTargetLatLon, 0, 3 ,4 ,5)
 		
 		global imageDirection 
 		global pixBuf
 		
 		global labelDist
-		labelDist = gtk.Label("34 m")
+		labelDist = gtk.Label("- m")
 		table.attach(labelDist, 0, 1, 0, 1)
 		
 		global labelBearing
-		labelBearing = gtk.Label("-199")
-		table.attach(labelBearing, 1, 2, 0, 1)
+		labelBearing = gtk.Label("-")
+		table.attach(labelBearing, 2, 3, 0, 1)
 		
 		global progressbar		
 		progressbar = gtk.ProgressBar()
-		table.attach(progressbar, 0, 2, 2, 3)
+		table.attach(progressbar, 0, 3, 2, 3)
 		
 		global buttonChange 
 		buttonChange = gtk.Button("Change")
-		table.attach(buttonChange, 1, 2, 5, 6)
+		table.attach(buttonChange, 2, 3, 5, 6)
 		buttonChange.connect('clicked', self.input_target)
+
+		global buttonSwitch
+		buttonChange = gtk.Button("D/DM")
+		table.attach(buttonChange, 1, 2, 5, 6)
+		buttonChange.connect('clicked', self.switch_display)
 		
 		labelDist.modify_font(pango.FontDescription("sans 10"))
 		labelBearing.modify_font(pango.FontDescription("sans 10"))
@@ -195,21 +278,16 @@ class gui():
 		drawing_area.connect("expose_event", self.expose_event)
 		drawing_area.connect("configure_event", self.configure_event)
 		drawing_area.set_events(gtk.gdk.EXPOSURE_MASK)
-		table.attach(drawing_area, 0,2, 1, 2)
-		drawable = drawing_area.window
+		table.attach(drawing_area, 0,3, 1, 2)
+		#drawable = drawing_area.window
 		
-		self.gps_position = coordinate(0, 0)
-		self.gps_bearing = 0.4
 		self.window.show_all()	
 		self.read_config()
 		self.update_display()
 		self.update_target_display()
-		self.gps_thread = gps_reader(self)
-		#self.gps_thread.start()		
-		#gtk.gdk.threads_enter()
-		gtk.timeout_add(1000, self.read_gps)
+		self.gps_thread = Gps_reader(self)
+		gtk.timeout_add(500, self.read_gps)
 		gtk.main()
-		#gtk.gdk.threads_leave()
 		
 	def expose_event(self, widget, event):
 		x , y, width, height = event.area
@@ -265,7 +343,6 @@ class gui():
 		
 		if (disabled):		
 			xgc.line_width = 3
-			#xgc.line_style = gtk.gdk.LINE_ON_OFF_DASH
 			xgc.set_rgb_fg_color(gtk.gdk.color_parse("red"))
 			pixmap.draw_line(xgc, x, y, width, height)
 			xgc.set_rgb_fg_color(gtk.gdk.color_parse("red"))
@@ -277,7 +354,8 @@ class gui():
 		return True
 
 	def get_arrow_transformed(self, x, y, width, height, angle):
-		arrow = [(0, -1.5), (1, 1.5), (0,0.5), (-1, 1.5)]
+		u = 1.0/3.0 # Offset to center of arrow, calculated as 2-x = sqrt(1^2+(x+1)^2)
+		arrow = [(0, -2+u), (1, +1+u), (0,0+u), (-1, 1+u)]
 		multiply = height / 4
 		offset_x = width / 2 + x
 		offset_y = height / 2 + y
@@ -299,7 +377,7 @@ class gui():
 			target_lat = 49.34567
 			target_lon = 6.2345
 		
-		self.target_position = coordinate(float(target_lat), float(target_lon))
+		self.target_position = Coordinate(float(target_lat), float(target_lon))
 		
 	def write_config(self):
 		config = ConfigParser.ConfigParser()
@@ -313,61 +391,32 @@ class gui():
 		#  ++ ++ +++
 		#  49*45,123
 		#  -- -- ---
-		print "input target 1"
+
+		udr = Updown_Rows(self.format, self.target_position)
+
+
 		dialog = gtk.Dialog("Result", None, gtk.DIALOG_MODAL, (gtk.STOCK_CLOSE, gtk.RESPONSE_CLOSE))
-		
 		dialog.vbox.pack_start(gtk.Label("Latitude:"))
-		table = gtk.Table(3, 9, False)
-		chooser_lat = []
-		chooser_lat.append(updown(table, 0))
-		chooser_lat.append(updown(table, 1))
-		table.attach(gtk.Label(" "), 2, 3, 1, 2)
-		chooser_lat.append(updown(table, 3))
-		chooser_lat.append(updown(table, 4))
-		table.attach(gtk.Label(","), 5, 6, 1, 2)
-		chooser_lat.append(updown(table, 6))
-		chooser_lat.append(updown(table, 7))
-		chooser_lat.append(updown(table, 8))
-		dialog.vbox.pack_start(table)
-		
-		
+		dialog.vbox.pack_start(udr.table_lat)
 		dialog.vbox.pack_start(gtk.Label("\nLongitude:"))
-		table = gtk.Table(3, 9, False)
-		chooser_lon = []
-		chooser_lon.append(updown(table, 0))
-		chooser_lon.append(updown(table, 1))
-		chooser_lon.append(updown(table, 2))
-		table.attach(gtk.Label(" "), 3, 4, 1, 2)
-		chooser_lon.append(updown(table, 4))
-		chooser_lon.append(updown(table, 5))
-		table.attach(gtk.Label(","), 6, 7, 1, 2)
-		chooser_lon.append(updown(table, 7))
-		chooser_lon.append(updown(table, 8))
-		chooser_lon.append(updown(table, 9))
-		dialog.vbox.pack_start(table)
-		
-		#print "input target 2"
-		[coord_lat, coord_lon] = self.target_position.to_dm_array()
-		i = 0
-		for val in coord_lat:
-			chooser_lat[i].set_value(val)
-			i = i + 1
-			
-		i = 0
-		for val in coord_lon:
-			chooser_lon[i].set_value(val)
-			i = i + 1
+		dialog.vbox.pack_start(udr.table_lon)
 		
 		dialog.show_all()
-		answer = dialog.run()
+		dialog.run()
 		dialog.destroy()
-			
-		lat_values = [ud.value for ud in chooser_lat]
-		lon_values = [ud.value for ud in chooser_lon]
-		self.target_position.from_dm_array(lat_values, lon_values)
+		self.target_position = udr.get_value()
 		self.update_target_display();
 		self.write_config()
-		
+
+	def switch_display(self, target):
+		if self.format == self.FORMAT_D:
+			self.format = self.FORMAT_DM
+		elif self.format == self.FORMAT_DM:
+			self.format = self.FORMAT_D
+
+		self.update_display()
+		self.update_target_display()
+
 	def read_gps(self):
 		gps_position = self.gps_thread.get_position()
 		gps_track = self.gps_thread.get_track()
@@ -396,20 +445,20 @@ class gui():
 		if (display_dist > 100):
 			xgc.line_width = 5
 			xgc.line_style = gtk.gdk.LINE_ON_OFF_DASH
-			progressbar.hide()
+			#progressbar.hide()
 		else:
+			progressbar.show()
 			progressbar.set_fraction(display_dist/100)
 			
 		if (display_dist > 1000):
 			labelDist.set_text("%3.1fkm" % (display_dist / 1000))
 		else:
 			labelDist.set_text("%dm" % display_dist)
-		[lat, lon] = self.gps_position.to_ddmm()
-		labelLatLon.set_text("Aktuell: %2d° %06.3f / %2d° %06.3f" % (lat[0], lat[1], lon[0], lon[1]))
+		
+		labelLatLon.set_text("Aktuell: %s / %s" % (self.gps_position.get_lat(self.format), self.gps_position.get_lon(self.format)))
 		
 	def update_target_display(self):
-		[lat, lon] = self.target_position.to_ddmm()
-		labelTargetLatLon.set_text("Ziel: %2d° %06.3f / %2d° %06.3f" % (lat[0], lat[1], lon[0], lon[1]))
+		labelTargetLatLon.set_text("Ziel: %s / %s" % (self.target_position.get_lat(self.format), self.target_position.get_lon(self.format)))
 		
 	
 	def destroy(self, target):
@@ -418,7 +467,7 @@ class gui():
 
 
 
-class gps_reader():
+class Gps_reader():
 	def __init__(self, gui):
 		#Thread.__init__(self)
 		self.gui = gui
@@ -426,15 +475,6 @@ class gps_reader():
 		self.connect();
 		self.stopped = False
 		
-	#def run(self):
-		#while (self.stopped == False):
-		#	gps_position = self.get_position()
-		#	gps_track = self.get_track()
-		#	if (gps_position != None and gps_track != None):
-		#		self.on_good_fix(gps_position, gps_track)
-		#	else:
-		#		self.on_no_fix()
-		#	time.sleep(1)
 	
 	def connect(self):
 		try:
@@ -459,9 +499,9 @@ class gps_reader():
 				self.status = "Kein GPS-Signal"			
 				return None
 			[lat, lon] = [float(ll) for ll in text.split(' ')]
-			return coordinate(lat, lon)
+			return Coordinate(lat, lon)
 		except:
-			print "Fehler beim Auslesen der Daten"
+			#print "Fehler beim Auslesen der Daten"
 			return None
 		
 		
@@ -476,22 +516,13 @@ class gps_reader():
 				return None
 			return float(text)
 		except:
-			print "Fehler beim Auslesen der Daten"
+			#print "Fehler beim Auslesen der Daten"
 			return None	
 		
-	#def on_good_fix(self, gps_position, gps_track):
-	#	gtk.gdk.threads_enter()
-	#	self.gui.on_good_fix(gps_position, gps_track)
-	#	gtk.gdk.threads_leave()
-		
-	#def on_no_fix(self):
-	#	gtk.gdk.threads_enter()
-	#	self.gui.on_no_fix()
-	#	gtk.gdk.threads_leave()
 		
 	
 
 if __name__ == "__main__":
 	gtk.gdk.threads_init()
-	gui = gui()
+	gui = Gui()
 
