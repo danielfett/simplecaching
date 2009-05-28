@@ -21,7 +21,6 @@
 
 
 ### For the html data download and login class
-import time
 
 ### For the gui :-)
 import gtk
@@ -220,10 +219,13 @@ class Gui():
 		self.drawing_area_configured = False
 		self.status = "?"
 		self.has_fix = False
-		self.format = self.FORMAT_D
+		self.format = self.FORMAT_DM
 		self.gps_position = Coordinate(0, 0)
 		self.target_position = Coordinate(0, 0)
 		self.gps_bearing = 0.0
+		self.gps_altitude = 0.0
+		self.gps_speed = 0.0
+		self.gps_sats = 0
 
         # Initialize Window
 		self.window = gtk.Window()
@@ -237,7 +239,6 @@ class Gui():
 		labelLatLon = gtk.Label("?")
 		table.attach(labelLatLon, 0, 3 ,3 ,4)
 		
-		
 		global labelTargetLatLon
 		labelTargetLatLon = gtk.Label("-")
 		table.attach(labelTargetLatLon, 0, 3 ,4 ,5)
@@ -246,11 +247,15 @@ class Gui():
 		global pixBuf
 		
 		global labelDist
-		labelDist = gtk.Label("- m")
+		labelDist = gtk.Label("Dist")
 		table.attach(labelDist, 0, 1, 0, 1)
+
+		global labelAltitude
+		labelAltitude = gtk.Label("Höhe")
+		table.attach(labelAltitude, 1, 2, 0, 1)
 		
 		global labelBearing
-		labelBearing = gtk.Label("-")
+		labelBearing = gtk.Label("Richtg")
 		table.attach(labelBearing, 2, 3, 0, 1)
 		
 		global progressbar		
@@ -258,18 +263,20 @@ class Gui():
 		table.attach(progressbar, 0, 3, 2, 3)
 		
 		global buttonChange 
-		buttonChange = gtk.Button("Change")
+		buttonChange = gtk.Button("ändern")
 		table.attach(buttonChange, 2, 3, 5, 6)
 		buttonChange.connect('clicked', self.input_target)
 
 		global buttonSwitch
-		buttonChange = gtk.Button("D/DM")
-		table.attach(buttonChange, 1, 2, 5, 6)
-		buttonChange.connect('clicked', self.switch_display)
+		buttonSwitch = gtk.Button("dm/d")
+		table.attach(buttonSwitch, 1, 2, 5, 6)
+		buttonSwitch.connect('clicked', self.switch_display)
 		
 		labelDist.modify_font(pango.FontDescription("sans 10"))
-		labelBearing.modify_font(pango.FontDescription("sans 10"))
+		labelBearing.modify_font(pango.FontDescription("sans 8"))
+		labelAltitude.modify_font(pango.FontDescription("sans 8"))
 		buttonChange.child.modify_font(pango.FontDescription("sans 10"))
+		buttonSwitch.child.modify_font(pango.FontDescription("sans 10"))
 		
 		global drawing_area
 		drawing_area = gtk.DrawingArea()
@@ -387,20 +394,13 @@ class Gui():
 		config.write(open(os.path.expanduser('~/.simplecaching.conf'),'w'))
 		
 	def input_target(self, target):
-		
-		#  ++ ++ +++
-		#  49*45,123
-		#  -- -- ---
-
 		udr = Updown_Rows(self.format, self.target_position)
-
 
 		dialog = gtk.Dialog("Result", None, gtk.DIALOG_MODAL, (gtk.STOCK_CLOSE, gtk.RESPONSE_CLOSE))
 		dialog.vbox.pack_start(gtk.Label("Latitude:"))
 		dialog.vbox.pack_start(udr.table_lat)
 		dialog.vbox.pack_start(gtk.Label("\nLongitude:"))
 		dialog.vbox.pack_start(udr.table_lon)
-		
 		dialog.show_all()
 		dialog.run()
 		dialog.destroy()
@@ -418,44 +418,49 @@ class Gui():
 		self.update_target_display()
 
 	def read_gps(self):
-		gps_position = self.gps_thread.get_position()
-		gps_track = self.gps_thread.get_track()
-		if (gps_position != None and gps_track != None):
-			self.on_good_fix(gps_position, gps_track)
+		#gps_position = self.gps_thread.get_position()
+		#gps_track = self.gps_thread.get_track()
+		gps_data = self.gps_thread.get_data()
+		if (gps_data['position'] != None):
+			self.gps_position = gps_data['position']
+			self.gps_bearing = gps_data['bearing']
+			self.gps_altitude = gps_data['altitude']
+			self.gps_speed = gps_data['speed']
+			self.gps_sats = gps_data['sats']
+			self.on_good_fix()
 		else:
+			self.gps_sats = gps_data['sats']
 			self.on_no_fix()
 		return True
 		
-	def on_good_fix(self, gps_position, gps_bearing):
-		self.gps_position = gps_position
-		self.gps_bearing = gps_bearing
+	def on_good_fix(self):
 		self.update_display()
 		self.has_fix  = True
 		self.draw_arrow()
+		self.update_progressbar()
 		
 	def on_no_fix(self):
 		labelBearing.set_text("No Fix")
 		labelLatLon.set_text(self.gps_thread.status)
 		self.has_fix = False
 		self.draw_arrow()
+		self.update_progressbar()
 		
 	def update_display(self):
 		labelBearing.set_text("%d°" % self.gps_bearing)
 		display_dist = self.gps_position.distance_to(self.target_position)
-		if (display_dist > 100):
-			xgc.line_width = 5
-			xgc.line_style = gtk.gdk.LINE_ON_OFF_DASH
-			#progressbar.hide()
-		else:
-			progressbar.show()
-			progressbar.set_fraction(display_dist/100)
 			
 		if (display_dist > 1000):
 			labelDist.set_text("%3.1fkm" % (display_dist / 1000))
 		else:
 			labelDist.set_text("%dm" % display_dist)
-		
+
+		labelAltitude.set_text("%3d m" % self.gps_altitude)
 		labelLatLon.set_text("Aktuell: %s / %s" % (self.gps_position.get_lat(self.format), self.gps_position.get_lon(self.format)))
+
+	def update_progressbar(self):
+		progressbar.set_fraction(float(self.gps_sats)/12.0)
+		progressbar.set_text("Satelliten: %d/12" % self.gps_sats)
 		
 	def update_target_display(self):
 		labelTargetLatLon.set_text("Ziel: %s / %s" % (self.target_position.get_lat(self.format), self.target_position.get_lon(self.format)))
@@ -518,7 +523,59 @@ class Gps_reader():
 		except:
 			#print "Fehler beim Auslesen der Daten"
 			return None	
-		
+
+	def get_data(self):
+		try:
+			gpsd_connection.send("%s\r\n" % 'o')
+			data = gpsd_connection.recv(8192)
+			gpsd_connection.send("%s\r\n" % 'q')
+			quality_data = gpsd_connection.recv(8192)
+			try:
+				match = re.compile('Q=([^ ]+)\s').search(quality_data)
+				sats = match.group(1)
+				if sats == '?':
+					sats = 0
+			except:
+				# Number of satellites could not be determined
+				sats = 0
+
+			if data == "GPSD,O=?":
+				self.status = "Kein GPS-Signal"
+				return {
+					'position': None,
+					'altitude': None,
+					'bearing': None,
+					'speed': None,
+					'sats': int(sats)
+				}
+			
+			# example output:
+			# GPSD,O=- 1243530779.000 ? 49.736876 6.686998 271.49 1.20 1.61 49.8566 0.050 -0.175 ? ? ? 3
+			# or
+			# GPSD,O=?
+			try:
+				[tag, timestamp, time_error, lat, lon, alt, err_hor, err_vert, track, speed, delta_alt, err_track, err_speed, err_delta_alt, mode] = data.split(' ')
+			except:
+				print "GPSD Output: \n%s\n  -- cannot be parsed." % data
+				self.status = "GPSD-Ausgabe konnte nicht gelesen werden."
+				
+			return {
+				'position': Coordinate(float(lat), float(lon)),
+				'altitude': float(alt),
+				'bearing': float(track),
+				'speed': float(speed),
+				'sats': int(sats)
+			}
+		except:
+			#print "Fehler beim Auslesen der Daten."
+			return {
+				'position': None,
+				'altitude': None,
+				'bearing': None,
+				'speed': None,
+				'sats': 0
+			}
+
 		
 	
 
