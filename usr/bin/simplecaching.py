@@ -364,8 +364,8 @@ class Gui():
 		u = 1.0/3.0 # Offset to center of arrow, calculated as 2-x = sqrt(1^2+(x+1)^2)
 		arrow = [(0, -2+u), (1, +1+u), (0,0+u), (-1, 1+u)]
 		multiply = height / 4
-		offset_x = width / 2 + x
-		offset_y = height / 2 + y
+		offset_x = width / 2 #+ x
+		offset_y = height / 2 #+ y
 		s = math.sin(math.radians(angle))
 		c = math.cos(math.radians(angle))
 		arrow_transformed = []
