@@ -1,0 +1,9 @@
+Package: simplecaching
+Section: x11
+Priority: optional
+Version: 0.0
+Architecture: all
+Maintainer: Daniel Fett
+Depends: python-pygtk
+Source: none
+Description: Simplecaching is a simple geocaching tool for linux

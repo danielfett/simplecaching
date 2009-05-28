@@ -1,0 +1,15 @@
+
+[Desktop Entry]
+Name=SimpleCaching
+Comment=A Simple Geocaching Tool For Linux
+Encoding=UTF-8
+Version=0.0
+Type=Application
+Exec=simplecaching.py
+Icon=simplecaching
+Terminal=false
+Categories=Office;
+SingleInstance=true
+StartupNotify=true
+Comment[de_DE.UTF-8]=A Simple Linux Geocaching tool
+Name[de_DE]=simplecaching.desktop
