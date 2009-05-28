@@ -1,3 +1,4 @@
+import gobject
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
@@ -243,9 +244,6 @@ class Gui():
 		labelTargetLatLon = gtk.Label("-")
 		table.attach(labelTargetLatLon, 0, 3 ,4 ,5)
 		
-		global imageDirection 
-		global pixBuf
-
 		global progressbar
 		progressbar = gtk.ProgressBar()
 		table.attach(progressbar, 0, 3, 0, 1)
@@ -280,7 +278,7 @@ class Gui():
 		
 		global drawing_area
 		drawing_area = gtk.DrawingArea()
-		drawing_area.set_size_request(470, 400)
+		drawing_area.set_size_request(470, 380)
 		drawing_area.show()
 		drawing_area.connect("expose_event", self.expose_event)
 		drawing_area.connect("configure_event", self.configure_event)
@@ -293,7 +291,7 @@ class Gui():
 		self.update_display()
 		self.update_target_display()
 		self.gps_thread = Gps_reader(self)
-		gtk.timeout_add(500, self.read_gps)
+		gobject.timeout_add(500, self.read_gps)
 		gtk.main()
 		
 	def expose_event(self, widget, event):
@@ -357,15 +355,15 @@ class Gui():
 			
 		
 		widget.window.draw_drawable(widget.get_style().fg_gc[gtk.STATE_NORMAL],
-			pixmap, x, y, x, y, width, height)
+			pixmap, 0, 0, 0, 0, width, height)
 		return True
 
 	def get_arrow_transformed(self, x, y, width, height, angle):
 		u = 1.0/3.0 # Offset to center of arrow, calculated as 2-x = sqrt(1^2+(x+1)^2)
 		arrow = [(0, -2+u), (1, +1+u), (0,0+u), (-1, 1+u)]
-		multiply = height / 4
-		offset_x = width / 2 #+ x
-		offset_y = height / 2 #+ y
+		multiply = height / (2*(2-u))
+		offset_x = width / 2 
+		offset_y = height / 2 
 		s = math.sin(math.radians(angle))
 		c = math.cos(math.radians(angle))
 		arrow_transformed = []
@@ -451,7 +449,7 @@ class Gui():
 		display_dist = self.gps_position.distance_to(self.target_position)
 			
 		if (display_dist > 1000):
-			labelDist.set_text("%3.1fkm" % (display_dist / 1000))
+			labelDist.set_text("%3dkm" % (display_dist / 1000))
 		else:
 			labelDist.set_text("%3dm" % display_dist)
 
@@ -538,8 +536,8 @@ class Gps_reader():
 			except:
 				# Number of satellites could not be determined
 				sats = 0
-
-			if data == "GPSD,O=?":
+				
+			if data.strip() == "GPSD,O=?":
 				self.status = "Kein GPS-Signal"
 				return {
 					'position': None,
