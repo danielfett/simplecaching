@@ -369,7 +369,7 @@ class Gui():
 		
 	def read_config(self):
 		config = ConfigParser.ConfigParser()
-		config.read(os.path.expanduser('~/simplecaching.conf'))
+		config.read(os.path.expanduser('~/.simplecaching.conf'))
 		try:
 			target_lat = config.get("saved","last_target_lat",0)
 			target_lon = config.get("saved", "last_target_lon",0)
@@ -384,7 +384,7 @@ class Gui():
 		config.add_section("saved")
 		config.set("saved", "last_target_lat", "%8.5f" % self.target_position.lat)
 		config.set("saved", "last_target_lon", "%9.5f" % self.target_position.lon)
-		config.write(open(os.path.expanduser('~/simplecaching.conf'),'w'))
+		config.write(open(os.path.expanduser('~/.simplecaching.conf'),'w'))
 		
 	def input_target(self, target):
 		
