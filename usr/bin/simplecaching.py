@@ -63,8 +63,8 @@ class Coordinate():
 			float(str(lon[3]) + str(lon[4]) + "." + str(lon[5]) + str(lon[6]) + str(lon[7])))
 
 	def from_d_array(self, lat, lon):
-		self.lat = float("%d%d.%d%d%d%d" % tuple(lat))
-		self.lon = float("%d%d%d.%d%d%d%d" % tuple(lon))
+		self.lat = float("%d%d.%d%d%d%d%d" % tuple(lat))
+		self.lon = float("%d%d%d.%d%d%d%d%d" % tuple(lon))
 			
 	def to_dm_array(self):
 		[[lat_d, lat_m],[lon_d, lon_m]] = self.to_dm()
@@ -79,9 +79,9 @@ class Coordinate():
 
 	def to_d_array(self):
 
-		p = re.compile('^(\d?)(\d)(\d).(\d)(\d)(\d)(\d)$')
-		d_lat = p.search("%08.4f" % self.lat)
-		d_lon = p.search("%08.4f" % self.lon)
+		p = re.compile('^(\d?)(\d)(\d).(\d)(\d)(\d)(\d)(\d)$')
+		d_lat = p.search("%08.5f" % self.lat)
+		d_lon = p.search("%09.5f" % self.lon)
 		return [
 			[d_lat.group(i) for i in range (2, 7)],
 			[d_lon.group(i) for i in range (1, 7)]
@@ -106,13 +106,13 @@ class Coordinate():
 
 	def get_lat(self, format):
 		if format == Gui.FORMAT_D:
-			return "%7.4f°" % self.lat
+			return "%8.5f°" % self.lat
 		elif format == Gui.FORMAT_DM:
 			return "%2d° %06.3f" % (int(math.floor(self.lat)), (self.lat - math.floor(self.lat)) * 60)
 
 	def get_lon(self, format):
 		if format == Gui.FORMAT_D:
-			return "%8.4f°" % self.lon
+			return "%9.5f°" % self.lon
 		elif format == Gui.FORMAT_DM:
 			return "%3d° %06.3f" % (int(math.floor(self.lon)), (self.lon - math.floor(self.lon)) * 60)
 
@@ -245,22 +245,22 @@ class Gui():
 		
 		global imageDirection 
 		global pixBuf
-		
-		global labelDist
-		labelDist = gtk.Label("Dist")
-		table.attach(labelDist, 0, 1, 0, 1)
+
+		global progressbar
+		progressbar = gtk.ProgressBar()
+		table.attach(progressbar, 0, 3, 0, 1)
 
 		global labelAltitude
 		labelAltitude = gtk.Label("Höhe")
-		table.attach(labelAltitude, 1, 2, 0, 1)
-		
+		table.attach(labelAltitude, 0, 1, 1, 2)
+
+		global labelDist
+		labelDist = gtk.Label("Dist")
+		table.attach(labelDist, 1, 2, 1, 2)
+
 		global labelBearing
 		labelBearing = gtk.Label("Richtg")
-		table.attach(labelBearing, 2, 3, 0, 1)
-		
-		global progressbar		
-		progressbar = gtk.ProgressBar()
-		table.attach(progressbar, 0, 3, 2, 3)
+		table.attach(labelBearing, 2, 3, 1, 2)
 		
 		global buttonChange 
 		buttonChange = gtk.Button("ändern")
@@ -285,7 +285,7 @@ class Gui():
 		drawing_area.connect("expose_event", self.expose_event)
 		drawing_area.connect("configure_event", self.configure_event)
 		drawing_area.set_events(gtk.gdk.EXPOSURE_MASK)
-		table.attach(drawing_area, 0,3, 1, 2)
+		table.attach(drawing_area, 0,3, 2, 3)
 		#drawable = drawing_area.window
 		
 		self.window.show_all()	
@@ -453,9 +453,9 @@ class Gui():
 		if (display_dist > 1000):
 			labelDist.set_text("%3.1fkm" % (display_dist / 1000))
 		else:
-			labelDist.set_text("%dm" % display_dist)
+			labelDist.set_text("%3dm" % display_dist)
 
-		labelAltitude.set_text("%3d m" % self.gps_altitude)
+		labelAltitude.set_text("%3dm" % self.gps_altitude)
 		labelLatLon.set_text("Aktuell: %s / %s" % (self.gps_position.get_lat(self.format), self.gps_position.get_lon(self.format)))
 
 	def update_progressbar(self):
