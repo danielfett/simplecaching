@@ -1,4 +1,3 @@
-import gobject
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
@@ -25,6 +24,7 @@ import gobject
 
 ### For the gui :-)
 import gtk
+import gobject
 import pango
 
 ### For loading gps values
@@ -38,7 +38,6 @@ import os
 
 
 import math
-
 ### For threading
 #import threading
 #import thread
