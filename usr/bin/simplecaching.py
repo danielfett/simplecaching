@@ -215,17 +215,17 @@ class Updown_Rows():
 		if self.format == Gui.FORMAT_DM and not is_long:
 			num = 7
 			interrupt[3] =  "°"
-			interrupt[6] = ","
+			interrupt[6] = "."
 		elif self.format == Gui.FORMAT_DM and is_long:
 			num = 8
 			interrupt[4] = "°"
-			interrupt[7] = ","
+			interrupt[7] = "."
 		elif self.format == Gui.FORMAT_D and not is_long:
 			num = 7
-			interrupt[3] = ","
+			interrupt[3] = "."
 		elif self.format == Gui.FORMAT_D and is_long:
 			num = 8
-			interrupt[4] = ","
+			interrupt[4] = "."
 
 		table = gtk.Table(3, num + len(interrupt) + 1, False)
 		
@@ -288,19 +288,19 @@ class Gui():
 		table.attach(progressbar, 0, 3, 0, 1)
 
 		global labelAltitude
-		labelAltitude = gtk.Label("Höhe")
+		labelAltitude = gtk.Label("ALT")
 		table.attach(labelAltitude, 0, 1, 1, 2)
 
 		global labelDist
-		labelDist = gtk.Label("Dist")
+		labelDist = gtk.Label("DIST")
 		table.attach(labelDist, 1, 2, 1, 2)
 
 		global labelBearing
-		labelBearing = gtk.Label("Richtg")
+		labelBearing = gtk.Label("BEARNG")
 		table.attach(labelBearing, 2, 3, 1, 2)
 		
 		global buttonChange 
-		buttonChange = gtk.Button("ändern")
+		buttonChange = gtk.Button("change")
 		table.attach(buttonChange, 2, 3, 5, 6)
 		buttonChange.connect('clicked', self.input_target)
 
@@ -433,7 +433,7 @@ class Gui():
 	def input_target(self, target):
 		udr = Updown_Rows(self.format, self.target_position)
 
-		dialog = gtk.Dialog("Result", None, gtk.DIALOG_MODAL, (gtk.STOCK_CLOSE, gtk.RESPONSE_CLOSE))
+		dialog = gtk.Dialog("Change Target", None, gtk.DIALOG_MODAL, (gtk.STOCK_CLOSE, gtk.RESPONSE_CLOSE))
 		dialog.vbox.pack_start(gtk.Label("Latitude:"))
 		dialog.vbox.pack_start(udr.table_lat)
 		dialog.vbox.pack_start(gtk.Label("\nLongitude:"))
@@ -493,14 +493,14 @@ class Gui():
 			labelDist.set_text("%3dm" % display_dist)
 
 		labelAltitude.set_text("%3dm" % self.gps_altitude)
-		labelLatLon.set_text("Aktuell: %s / %s" % (self.gps_position.get_lat(self.format), self.gps_position.get_lon(self.format)))
+		labelLatLon.set_text("Current: %s / %s" % (self.gps_position.get_lat(self.format), self.gps_position.get_lon(self.format)))
 
 	def update_progressbar(self):
 		progressbar.set_fraction(float(self.gps_sats)/12.0)
-		progressbar.set_text("Satelliten: %d/12" % self.gps_sats)
+		progressbar.set_text("Satellites: %d/12" % self.gps_sats)
 		
 	def update_target_display(self):
-		labelTargetLatLon.set_text("Ziel: %s / %s" % (self.target_position.get_lat(self.format), self.target_position.get_lon(self.format)))
+		labelTargetLatLon.set_text("Target: %s / %s" % (self.target_position.get_lat(self.format), self.target_position.get_lon(self.format)))
 		
 	
 	def destroy(self, target):
@@ -513,7 +513,7 @@ class Gps_reader():
 	def __init__(self, gui):
 		#Thread.__init__(self)
 		self.gui = gui
-		self.status = "verbinde..."
+		self.status = "connecting..."
 		self.connect();
 		self.stopped = False
 		
@@ -523,9 +523,9 @@ class Gps_reader():
 			global gpsd_connection
 			gpsd_connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			gpsd_connection.connect(("127.0.0.1", 2947))
-			self.status = "verbunden"
+			self.status = "connected"
 		except:
-			self.status = "Fehler beim Verbinden"
+			self.status = "Could not connect to GPSD on Localhost, Port 2947"
 			print "Could not connect"
 			
 			
@@ -538,7 +538,7 @@ class Gps_reader():
 			match = p.search(pos)
 			text = match.group(1)
 			if (text == '?'):	
-				self.status = "Kein GPS-Signal"			
+				self.status = "No GPS signal"			
 				return None
 			[lat, lon] = [float(ll) for ll in text.split(' ')]
 			return Coordinate(lat, lon)
@@ -577,7 +577,7 @@ class Gps_reader():
 				sats = 0
 				
 			if data.strip() == "GPSD,O=?":
-				self.status = "Kein GPS-Signal"
+				self.status = "No GPS signal"
 				return {
 					'position': None,
 					'altitude': None,
@@ -594,7 +594,7 @@ class Gps_reader():
 				[tag, timestamp, time_error, lat, lon, alt, err_hor, err_vert, track, speed, delta_alt, err_track, err_speed, err_delta_alt, mode] = data.split(' ')
 			except:
 				print "GPSD Output: \n%s\n  -- cannot be parsed." % data
-				self.status = "GPSD-Ausgabe konnte nicht gelesen werden."
+				self.status = "Could not read GPSD output."
 				
 			return {
 				'position': Coordinate(float(lat), float(lon)),
