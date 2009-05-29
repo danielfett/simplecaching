@@ -56,22 +56,22 @@ class Coordinate():
 		self.lat = latdd + (latmm/60)
 		self.lon = londd + (lonmm/60)
 		
-	def from_dm_array(self, lat, lon):
-		self.from_dm(lat[0]*10 + lat[1],
+	def from_dm_array(self, sign_lat, lat, sign_lon, lon):
+		self.from_dm(int(sign_lat) * lat[0]*10 + lat[1],
 			float(str(lat[2]) + str(lat[3]) + "." + str(lat[4]) + str(lat[5]) + str(lat[6])),
-			lon[0] * 100 + lon[1] * 10 + lon[2],
+			int(sign_lon) * lon[0] * 100 + lon[1] * 10 + lon[2],
 			float(str(lon[3]) + str(lon[4]) + "." + str(lon[5]) + str(lon[6]) + str(lon[7])))
 
-	def from_d_array(self, lat, lon):
-		self.lat = float("%d%d.%d%d%d%d%d" % tuple(lat))
-		self.lon = float("%d%d%d.%d%d%d%d%d" % tuple(lon))
+	def from_d_array(self, sign_lat, lat, sign_lon, lon):
+		self.lat = int(sign_lat) * float("%d%d.%d%d%d%d%d" % tuple(lat))
+		self.lon = int(sign_lon) * float("%d%d%d.%d%d%d%d%d" % tuple(lon))
 			
 	def to_dm_array(self):
 		[[lat_d, lat_m],[lon_d, lon_m]] = self.to_dm()
 		
 		p = re.compile('^(\d?)(\d)(\d) (\d)(\d)\.(\d)(\d)(\d)$')
-		d_lat = p.search("%02d %06.3f" % (lat_d, lat_m))
-		d_lon = p.search("%03d %06.3f" % (lon_d, lon_m))
+		d_lat = p.search("%02d %06.3f" % (abs(lat_d), abs(lat_m)))
+		d_lon = p.search("%03d %06.3f" % (abs(lon_d), abs(lon_m)))
 		return [
 			[d_lat.group(i) for i in range (2, 9)],
 			[d_lon.group(i) for i in range (1, 9)]
@@ -80,8 +80,8 @@ class Coordinate():
 	def to_d_array(self):
 
 		p = re.compile('^(\d?)(\d)(\d).(\d)(\d)(\d)(\d)(\d)$')
-		d_lat = p.search("%08.5f" % self.lat)
-		d_lon = p.search("%09.5f" % self.lon)
+		d_lat = p.search("%08.5f" % abs(self.lat))
+		d_lon = p.search("%09.5f" % abs(self.lon))
 		return [
 			[d_lat.group(i) for i in range (2, 7)],
 			[d_lon.group(i) for i in range (1, 7)]
@@ -108,13 +108,13 @@ class Coordinate():
 		if format == Gui.FORMAT_D:
 			return "%8.5f°" % self.lat
 		elif format == Gui.FORMAT_DM:
-			return "%2d° %06.3f" % (int(math.floor(self.lat)), (self.lat - math.floor(self.lat)) * 60)
+			return "%2d° %06.3f'" % (int(math.floor(self.lat)), (self.lat - math.floor(self.lat)) * 60)
 
 	def get_lon(self, format):
 		if format == Gui.FORMAT_D:
 			return "%9.5f°" % self.lon
 		elif format == Gui.FORMAT_DM:
-			return "%3d° %06.3f" % (int(math.floor(self.lon)), (self.lon - math.floor(self.lon)) * 60)
+			return "%3d° %06.3f'" % (int(math.floor(self.lon)), (self.lon - math.floor(self.lon)) * 60)
 
 	def distance_to (self, target):
 		R = 6371*1000;
@@ -155,6 +155,38 @@ class Updown():
 		
 	def update(self):
 		self.label.set_text(str(self.value))
+		
+
+		
+class PlusMinusUpdown():
+	def __init__(self, table, position, labels):
+		self.is_neg = False
+		self.labels = labels
+		self.button = gtk.Button(labels[0])
+		table.attach(self.button, position, position + 1, 1, 2)
+		self.button.connect('clicked', self.value_toggle)
+		self.button.child.modify_font(pango.FontDescription("sans 9"))
+	
+	def value_toggle(self, target):
+		self.is_neg = not self.is_neg
+		self.update()
+		
+	def set_value(self, value):
+		self.is_neg = (value < 0)
+		self.update()
+		
+	def get_value(self):
+		if self.is_neg:
+			return -1
+		else:
+			return 1
+		
+	def update(self):
+		if self.is_neg:
+			text = self.labels[0]
+		else:
+			text = self.labels[1]
+		self.button.child.set_text(text)
 
 class Updown_Rows():
 	def __init__(self, format, coord):
@@ -165,38 +197,46 @@ class Updown_Rows():
 			[init_lat, init_lon] = coord.to_d_array()
 		[self.table_lat, self.chooser_lat] = self.generate_table(False, init_lat)
 		[self.table_lon, self.chooser_lon] = self.generate_table(True, init_lon)
+		self.switcher_lat.set_value(coord.lat)
+		self.switcher_lon.set_value(coord.lon)
 
 	def get_value(self):
 		coord = Coordinate(0,0)
 		lat_values = [ud.value for ud in self.chooser_lat]
 		lon_values = [ud.value for ud in self.chooser_lon]
 		if self.format == Gui.FORMAT_DM:
-			coord.from_dm_array(lat_values, lon_values)
+			coord.from_dm_array(self.switcher_lat.get_value(), lat_values, self.switcher_lon.get_value(), lon_values)
 		elif self.format == Gui.FORMAT_D:
-			coord.from_d_array(lat_values, lon_values)
+			coord.from_d_array(self.switcher_lat.get_value(), lat_values, self.switcher_lon.get_value(), lon_values)
 		return coord
 
 	def generate_table(self, is_long, initial_value):
 		interrupt = {}
 		if self.format == Gui.FORMAT_DM and not is_long:
 			num = 7
-			interrupt[2] =  "°"
-			interrupt[5] = ","
+			interrupt[3] =  "°"
+			interrupt[6] = ","
 		elif self.format == Gui.FORMAT_DM and is_long:
 			num = 8
-			interrupt[3] = "°"
-			interrupt[6] = ","
+			interrupt[4] = "°"
+			interrupt[7] = ","
 		elif self.format == Gui.FORMAT_D and not is_long:
-			num = 6
-			interrupt[2] = ","
-		elif self.format == Gui.FORMAT_D and is_long:
 			num = 7
 			interrupt[3] = ","
+		elif self.format == Gui.FORMAT_D and is_long:
+			num = 8
+			interrupt[4] = ","
 
-		table = gtk.Table(3, 9, False)
+		table = gtk.Table(3, num + len(interrupt) + 1, False)
+		
+		if is_long:
+			self.switcher_lon = PlusMinusUpdown(table, 0, ['W', 'E'])
+		else:
+			self.switcher_lat = PlusMinusUpdown(table, 0, ['S', 'N'])
+		
 		chooser = []
 		cn = 0
-		for i in range(num + len(interrupt)):
+		for i in range(1, num + len(interrupt) + 1):
 			if i in interrupt:
 				table.attach(gtk.Label(interrupt[i]), i, i+1, 1, 2)
 			else:
