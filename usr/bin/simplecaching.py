@@ -44,9 +44,10 @@ import math
 
 
 class Coordinate():
-	def __init__(self, lat, lon):
+	def __init__(self, lat, lon, name = "No Name"):
 		self.lat = lat
 		self.lon = lon
+		self.name = name
 		
 	def from_d(self, lat, lon):
 		self.lat = lat
@@ -105,16 +106,26 @@ class Coordinate():
 		return (360 + bearing) % 360
 
 	def get_lat(self, format):
+		l = abs(self.lat)
+		if self.lat > 0:
+			c = 'N'
+		else:
+			c = 'S'
 		if format == Gui.FORMAT_D:
-			return "%8.5f°" % self.lat
+			return "%s%8.5f°" % (c, l)
 		elif format == Gui.FORMAT_DM:
-			return "%2d° %06.3f'" % (int(math.floor(self.lat)), (self.lat - math.floor(self.lat)) * 60)
+			return "%s%2d° %06.3f'" % (c, math.floor(l), (l - math.floor(l)) * 60)
 
 	def get_lon(self, format):
+		l = abs(self.lon)
+		if self.lon > 0:
+			c = 'E'
+		else:
+			c = 'W'
 		if format == Gui.FORMAT_D:
-			return "%9.5f°" % self.lon
+			return "%s%9.5f°" % (c, l)
 		elif format == Gui.FORMAT_DM:
-			return "%3d° %06.3f'" % (int(math.floor(self.lon)), (self.lon - math.floor(self.lon)) * 60)
+			return "%s%3d° %06.3f'" % (c, math.floor(l), (l - math.floor(l)) * 60)
 
 	def distance_to (self, target):
 		R = 6371*1000;
@@ -127,7 +138,7 @@ class Coordinate():
 		
 		
 class Updown():
-	def __init__(self, table, position):
+	def __init__(self, table, position, small):
 		self.value = int(0)
 		self.label = gtk.Label("0")
 		self.button_up = gtk.Button("+")
@@ -137,9 +148,13 @@ class Updown():
 		table.attach(self.button_down, position, position + 1, 2, 3)
 		self.button_up.connect('clicked', self.value_up)
 		self.button_down.connect('clicked', self.value_down)
-		self.label.modify_font(pango.FontDescription("sans 12"))
-		self.button_up.child.modify_font(pango.FontDescription("sans 12"))
-		self.button_down.child.modify_font(pango.FontDescription("sans 12"))
+		if small:
+			font = pango.FontDescription("sans 8")
+		else:
+			font = pango.FontDescription("sans 12")
+		self.label.modify_font(font)
+		self.button_up.child.modify_font(font)
+		self.button_down.child.modify_font(font)
 	
 	def value_up(self, target):
 		self.value = int((self.value + 1) % 10)
@@ -165,7 +180,7 @@ class PlusMinusUpdown():
 		self.button = gtk.Button(labels[0])
 		table.attach(self.button, position, position + 1, 1, 2)
 		self.button.connect('clicked', self.value_toggle)
-		self.button.child.modify_font(pango.FontDescription("sans 9"))
+		self.button.child.modify_font(pango.FontDescription("sans 8"))
 	
 	def value_toggle(self, target):
 		self.is_neg = not self.is_neg
@@ -213,17 +228,21 @@ class Updown_Rows():
 	def generate_table(self, is_long, initial_value):
 		interrupt = {}
 		if self.format == Gui.FORMAT_DM and not is_long:
+			small = 2
 			num = 7
 			interrupt[3] =  "°"
 			interrupt[6] = "."
 		elif self.format == Gui.FORMAT_DM and is_long:
+			small = 3
 			num = 8
 			interrupt[4] = "°"
 			interrupt[7] = "."
 		elif self.format == Gui.FORMAT_D and not is_long:
+			small = 2
 			num = 7
 			interrupt[3] = "."
 		elif self.format == Gui.FORMAT_D and is_long:
+			small = 3
 			num = 8
 			interrupt[4] = "."
 
@@ -240,15 +259,163 @@ class Updown_Rows():
 			if i in interrupt:
 				table.attach(gtk.Label(interrupt[i]), i, i+1, 1, 2)
 			else:
-				ud = Updown(table, i)
+				ud = Updown(table, i, cn < small)
 				if cn < len(initial_value):
 					ud.set_value(initial_value[cn])
 				chooser.append(ud)
 				cn = cn + 1
 
 		return [table, chooser]
-
 		
+class StoredTargetDisplay():
+	def __init__(self, coord, radio_group, gui):
+		self.gui = gui
+		
+		self.radio_button = gtk.RadioButton(radio_group, "")
+		self.coord_display = self.radio_button.child
+		self.name_input = gtk.Entry()
+		
+		self.coord = coord
+		self.update()
+		self.name_input.connect('changed', self.put_name)
+		self.name_input.connect('focus-in-event', self.put_name)
+		self.temp_name = ""
+		
+	def put_name(self, target, blub = None):
+		self.radio_button.set_active(True)
+		if self.coord == None:
+			self.temp_name = self.name_input.get_text()
+		else:
+			self.coord.name = self.name_input.get_text()
+	
+	def update(self):
+		if self.coord == None:
+			self.name_input.set_text("")
+			self.coord_display.set_text("-")
+		else:
+			self.name_input.set_text(self.coord.name)
+			self.coord_display.set_text("%s\n%s" % (self.coord.get_lat(self.gui.format), self.coord.get_lon(self.gui.format)))
+	
+	def edit(self):
+		if self.coord == None:
+			c = self.gui.gps_position
+			c.name = self.temp_name
+		else:
+			c = self.coord
+		self.coord = self.gui.show_coordinate_input(c)
+		self.update()	
+		
+	def set_coord(self, coord):
+		temp_name = coord
+		self.coord = coord
+		self.coord = temp_name
+		self.update()	
+		
+
+class StoredTargetDialog():
+	def __init__(self, gui):
+		self.gui = gui
+		global dialog
+		dialog = gtk.Dialog("Load/Store", None, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, (gtk.STOCK_CLOSE, gtk.RESPONSE_CLOSE))
+		
+	
+		self.table = gtk.Table(1,1,False)
+		
+		self.frame = gtk.Frame("Stored Targets")
+		self.frame.add(self.table)
+		dialog.vbox.pack_start(self.frame)
+		table = gtk.Table(4, 1, False)
+		
+		buttonDelete = gtk.Button(stock = "gtk-remove")
+		buttonDelete.get_children()[0].get_children()[0].get_children()[1].set_text("")
+		table.attach(buttonDelete, 0, 1, 0, 1)
+		buttonDelete.connect('clicked', self.stored_target_callback, "delete")
+		
+		buttonSetCurrent = gtk.Button(stock = "gtk-convert")
+		buttonSetCurrent.get_children()[0].get_children()[0].get_children()[1].set_text("")
+		table.attach(buttonSetCurrent, 1, 2, 0, 1)
+		buttonSetCurrent.connect('clicked', self.stored_target_callback, "store")
+
+		buttonEdit = gtk.Button(stock = "gtk-edit")
+		buttonEdit.get_children()[0].get_children()[0].get_children()[1].set_text("")
+		table.attach(buttonEdit, 2, 3, 0, 1)
+		buttonEdit.connect('clicked', self.stored_target_callback, "edit")
+		
+		buttonUse = gtk.Button(stock = "gtk-apply")
+		buttonUse.get_children()[0].get_children()[0].get_children()[1].set_text("")
+		table.attach(buttonUse, 3, 4, 0, 1)
+		buttonUse.connect('clicked', self.stored_target_callback, "use")
+		table.set_size_request(-1, 40)
+		dialog.vbox.pack_start(table)
+		
+	def run(self, nothing):
+		self.rebuild()
+		dialog.run()
+		self.gui.write_config()
+		dialog.hide()
+		self.update_stored_targets()
+		self.gui.write_config()
+		
+	def update_stored_targets(self):	
+		self.gui.stored_targets = []	
+		for i in self.stored_inputs:
+			if i.coord != None:
+				self.gui.stored_targets.append(i.coord)
+				
+	def rebuild(self, activate = -1):		
+		self.frame.remove(self.table)
+		self.table = self.build_table(activate)
+		self.frame.add(self.table)
+		dialog.show_all()
+		
+	def build_table(self, activate = -1):
+		table = gtk.Table(2, len(self.gui.stored_targets)+1, False)
+		self.stored_inputs = []
+		group = None
+		for i in range(len(self.gui.stored_targets) + 1):
+			if i < len(self.gui.stored_targets):
+				std = StoredTargetDisplay(self.gui.stored_targets[i], group, self.gui)
+			else:
+				std = StoredTargetDisplay(None, group, self.gui)
+			if i == activate:
+				std.radio_button.set_active(True)
+			if group == None:
+				group = std.radio_button
+			table.attach(std.radio_button, 0, 1, i, i+1)
+			table.attach(std.name_input, 1, 2, i, i+1)
+			self.stored_inputs.append(std)
+		return table
+		
+	def stored_target_callback(self, target, action):
+		current = None
+		num = 0
+		for i in self.stored_inputs:
+			if i.radio_button.get_active():
+				current = i
+				active = num
+			num = num + 1
+		if current == None:
+			return
+		
+		if action == "use":
+			if current.coord != None:
+				self.gui.target_position = current.coord
+				self.gui.update_target_display()
+				self.update_stored_targets()
+				self.gui.write_config()
+				dialog.hide()
+		elif action == "edit":
+			current.edit()
+			self.update_stored_targets()
+			self.rebuild(active)
+		elif action == "store":
+			current.set_coord(self.gui.target_position)
+			self.update_stored_targets()
+			self.rebuild(active)
+		elif action == "delete":
+			current.set_coord(None)
+			self.update_stored_targets()
+			self.rebuild(active)
 
 class Gui():
 	FORMAT_D = 0
@@ -266,8 +433,13 @@ class Gui():
 		self.gps_altitude = 0.0
 		self.gps_speed = 0.0
 		self.gps_sats = 0
-
-        # Initialize Window
+		self.stored_targets = []
+		
+		
+		# Dialogs
+		self.stored_dialog = StoredTargetDialog(self)
+		
+		# Main Screen turn on		
 		self.window = gtk.Window()
 		self.window.connect ("destroy", self.destroy)
 		self.window.set_title('Simple Geocaching Tool for Linux')
@@ -299,21 +471,24 @@ class Gui():
 		labelBearing = gtk.Label("BEARNG")
 		table.attach(labelBearing, 2, 3, 1, 2)
 		
-		global buttonChange 
 		buttonChange = gtk.Button("change")
 		table.attach(buttonChange, 2, 3, 5, 6)
 		buttonChange.connect('clicked', self.input_target)
 
-		global buttonSwitch
 		buttonSwitch = gtk.Button("dm/d")
 		table.attach(buttonSwitch, 1, 2, 5, 6)
 		buttonSwitch.connect('clicked', self.switch_display)
+		
+		buttonLoadStore = gtk.Button("load/\nstore")
+		table.attach(buttonLoadStore, 0, 1, 5, 6)
+		buttonLoadStore.connect('clicked', self.stored_dialog.run)
 		
 		labelDist.modify_font(pango.FontDescription("sans 10"))
 		labelBearing.modify_font(pango.FontDescription("sans 8"))
 		labelAltitude.modify_font(pango.FontDescription("sans 8"))
 		buttonChange.child.modify_font(pango.FontDescription("sans 10"))
 		buttonSwitch.child.modify_font(pango.FontDescription("sans 10"))
+		buttonLoadStore.child.modify_font(pango.FontDescription("sans 5"))
 		
 		global drawing_area
 		drawing_area = gtk.DrawingArea()
@@ -323,8 +498,9 @@ class Gui():
 		drawing_area.connect("configure_event", self.configure_event)
 		drawing_area.set_events(gtk.gdk.EXPOSURE_MASK)
 		table.attach(drawing_area, 0,3, 2, 3)
-		#drawable = drawing_area.window
 		
+		global arrow_transformed
+		arrow_transformed = None
 		self.window.show_all()	
 		self.read_config()
 		self.update_display()
@@ -337,6 +513,8 @@ class Gui():
 		x , y, width, height = event.area
 		widget.window.draw_drawable(widget.get_style().fg_gc[gtk.STATE_NORMAL],
 			pixmap, x, y, x, y, width, height)
+		pixmap.draw_rectangle( widget.get_style().bg_gc[gtk.STATE_NORMAL],
+			True, x, y, width, height)
 			
 		return False
 
@@ -351,6 +529,7 @@ class Gui():
 		self.draw_arrow()
 		
 	def draw_arrow(self):
+		global arrow_transformed
 		if (not self.drawing_area_configured):
 			return
 		widget = drawing_area
@@ -369,11 +548,19 @@ class Gui():
 		x, y, width, height = widget.get_allocation()
 		
 		xgc.set_rgb_fg_color(gtk.gdk.color_parse(color))
-
+		if (arrow_transformed != None):
+			minx = min(b[0] for b in arrow_transformed)-10
+			miny = min(b[1] for b in arrow_transformed)-10
+			maxx = max(b[0] for b in arrow_transformed)+10
+			maxy = max(b[1] for b in arrow_transformed)+10
+		else:
+			minx = x
+			miny = y
+			maxx = width
+			maxy = height
 		
 		pixmap.draw_rectangle( widget.get_style().bg_gc[gtk.STATE_NORMAL],
-			True, 0, 0, width, height)
-			
+			True, minx, miny, maxx, maxy)
 		arrow_transformed = self.get_arrow_transformed(x, y, width, height, display_bearing)	
 			
 		
@@ -405,11 +592,11 @@ class Gui():
 		offset_y = height / 2 
 		s = math.sin(math.radians(angle))
 		c = math.cos(math.radians(angle))
-		arrow_transformed = []
+		at = []
 		for (x, y) in arrow:
-			arrow_transformed.append((int(round(x * multiply * c + offset_x - y * multiply * s)),
+			at.append((int(round(x * multiply * c + offset_x - y * multiply * s)),
 				int(round(y * multiply * c + offset_y + x * multiply * s))))
-		return arrow_transformed
+		return at
 		
 	def read_config(self):
 		config = ConfigParser.ConfigParser()
@@ -420,30 +607,58 @@ class Gui():
 		except (ConfigParser.NoSectionError, ConfigParser.NoOptionError):
 			target_lat = 49.34567
 			target_lon = 6.2345
-		
 		self.target_position = Coordinate(float(target_lat), float(target_lon))
+		
+		i = 0
+		self.stored_targets = []
+		while (config.has_option("stored targets", "stored-%d-lat" % i) and 
+			config.has_option("stored targets", "stored-%d-lon" % i) and
+			config.has_option("stored targets", "stored-%d-name" % i)):
+			stored_lat = config.get("stored targets", "stored-%d-lat" % i, 0)
+			stored_lon = config.get("stored targets", "stored-%d-lon" % i, 0)
+			stored_name = config.get("stored targets", "stored-%d-name" % i, 0)
+			self.stored_targets.append(Coordinate(float(stored_lat), float(stored_lon), stored_name))
+			i = i + 1
 		
 	def write_config(self):
 		config = ConfigParser.ConfigParser()
 		config.add_section("saved")
 		config.set("saved", "last_target_lat", "%8.5f" % self.target_position.lat)
 		config.set("saved", "last_target_lon", "%9.5f" % self.target_position.lon)
-		config.write(open(os.path.expanduser('~/.simplecaching.conf'),'w'))
 		
-	def input_target(self, target):
-		udr = Updown_Rows(self.format, self.target_position)
+		config.add_section("stored targets")
+		i = 0
+		for pos in self.stored_targets:
+			config.set("stored targets", "stored-%d-lat" % i, "%8.5f" % pos.lat)
+			config.set("stored targets", "stored-%d-lon" % i, "%8.5f" % pos.lon)
+			config.set("stored targets", "stored-%d-name" % i, "%s" % pos.name)
+			i = i + 1
+		config.write(open(os.path.expanduser('~/.simplecaching.conf'),'w'))
 
+	def show_coordinate_input(self, start):
+		name = start.name
+		udr = Updown_Rows(self.format, start)
 		dialog = gtk.Dialog("Change Target", None, gtk.DIALOG_MODAL, (gtk.STOCK_CLOSE, gtk.RESPONSE_CLOSE))
-		dialog.vbox.pack_start(gtk.Label("Latitude:"))
-		dialog.vbox.pack_start(udr.table_lat)
-		dialog.vbox.pack_start(gtk.Label("\nLongitude:"))
-		dialog.vbox.pack_start(udr.table_lon)
+		
+		frame = gtk.Frame("Latitude")
+		frame.add(udr.table_lat)
+		dialog.vbox.pack_start(frame)
+		
+		frame = gtk.Frame("Longitude")
+		frame.add(udr.table_lon)
+		dialog.vbox.pack_start(frame)
+		
 		dialog.show_all()
 		dialog.run()
 		dialog.destroy()
-		self.target_position = udr.get_value()
+		c = udr.get_value()
+		c.name = name
+		return c
+		
+	def input_target(self, target):
+		self.target_position = self.show_coordinate_input(self.target_position)
 		self.update_target_display();
-		self.write_config()
+		self.write_config()				
 
 	def switch_display(self, target):
 		if self.format == self.FORMAT_D:
@@ -487,10 +702,12 @@ class Gui():
 		labelBearing.set_text("%d°" % self.gps_bearing)
 		display_dist = self.gps_position.distance_to(self.target_position)
 			
-		if (display_dist > 1000):
-			labelDist.set_text("%3dkm" % (display_dist / 1000))
+		if display_dist >= 1000:
+			labelDist.set_text("%3dkm" % round(display_dist / 1000))
+		elif display_dist >= 100:
+			labelDist.set_text("%3dm" % round(display_dist))
 		else:
-			labelDist.set_text("%3dm" % display_dist)
+			labelDist.set_text("%2.1fm" % round(display_dist,1))
 
 		labelAltitude.set_text("%3dm" % self.gps_altitude)
 		labelLatLon.set_text("Current: %s / %s" % (self.gps_position.get_lat(self.format), self.gps_position.get_lon(self.format)))
