@@ -36,14 +36,16 @@ import re
 import ConfigParser
 import os
 
+#import cProfile
+#import pstats
 
 import math
-### For threading
-#import threading
-#import thread
 
 
 class Coordinate():
+	re_to_dm_array = re.compile('^(\d?)(\d)(\d) (\d)(\d)\.(\d)(\d)(\d)$')
+	re_to_d_array = re.compile('^(\d?)(\d)(\d).(\d)(\d)(\d)(\d)(\d)$')
+	
 	def __init__(self, lat, lon, name = "No Name"):
 		self.lat = lat
 		self.lon = lon
@@ -70,9 +72,8 @@ class Coordinate():
 	def to_dm_array(self):
 		[[lat_d, lat_m],[lon_d, lon_m]] = self.to_dm()
 		
-		p = re.compile('^(\d?)(\d)(\d) (\d)(\d)\.(\d)(\d)(\d)$')
-		d_lat = p.search("%02d %06.3f" % (abs(lat_d), abs(lat_m)))
-		d_lon = p.search("%03d %06.3f" % (abs(lon_d), abs(lon_m)))
+		d_lat = self.re_to_dm_array.search("%02d %06.3f" % (abs(lat_d), abs(lat_m)))
+		d_lon = self.re_to_dm_array.search("%03d %06.3f" % (abs(lon_d), abs(lon_m)))
 		return [
 			[d_lat.group(i) for i in range (2, 9)],
 			[d_lon.group(i) for i in range (1, 9)]
@@ -80,9 +81,8 @@ class Coordinate():
 
 	def to_d_array(self):
 
-		p = re.compile('^(\d?)(\d)(\d).(\d)(\d)(\d)(\d)(\d)$')
-		d_lat = p.search("%08.5f" % abs(self.lat))
-		d_lon = p.search("%09.5f" % abs(self.lon))
+		d_lat = self.re_to_d_array.search("%08.5f" % abs(self.lat))
+		d_lon = self.re_to_d_array.search("%09.5f" % abs(self.lon))
 		return [
 			[d_lat.group(i) for i in range (2, 7)],
 			[d_lon.group(i) for i in range (1, 7)]
@@ -128,10 +128,10 @@ class Coordinate():
 			return "%s%3d° %06.3f'" % (c, math.floor(l), (l - math.floor(l)) * 60)
 
 	def distance_to (self, target):
-		R = 6371*1000;
-		dlat = math.radians(target.lat-self.lat);
-		dlon = math.radians(target.lon-self.lon); 
-		a = math.sin(dlat/2) * math.sin(dlat/2) + math.cos(math.radians(self.lat)) * math.cos(math.radians(target.lat)) * math.sin(dlon/2) * math.sin(dlon/2); 
+		R = 6371000;
+		dlat = math.pow(math.sin(math.radians(target.lat-self.lat)/2),2)
+		dlon = math.pow(math.sin(math.radians(target.lon-self.lon)/2),2) 
+		a = dlat + math.cos(math.radians(self.lat)) * math.cos(math.radians(target.lat)) * dlon; 
 		c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)); 
 		return R * c;
 		
@@ -429,6 +429,7 @@ class Gui():
 		self.format = self.FORMAT_DM
 		self.gps_position = Coordinate(0, 0)
 		self.target_position = Coordinate(0, 0)
+		self.target_distance = 6000
 		self.gps_bearing = 0.0
 		self.gps_altitude = 0.0
 		self.gps_speed = 0.0
@@ -500,7 +501,9 @@ class Gui():
 		table.attach(drawing_area, 0,3, 2, 3)
 		
 		global arrow_transformed
+		global last_display_data
 		arrow_transformed = None
+		last_display_data = None
 		self.window.show_all()	
 		self.read_config()
 		self.update_display()
@@ -529,21 +532,28 @@ class Gui():
 		self.draw_arrow()
 		
 	def draw_arrow(self):
-		global arrow_transformed
 		if (not self.drawing_area_configured):
 			return
-		widget = drawing_area
+			
+		global arrow_transformed
+		global last_display_bearing
 			
 		display_bearing = self.gps_position.bearing_to(self.target_position) - self.gps_bearing
-		display_distance = self.gps_position.distance_to(self.target_position)
+		display_distance = self.target_distance
 		disabled = not self.has_fix
-	
+		
 		if (display_distance < 50):
 			color = "red"
 		elif (display_distance < 150):
 			color = "orange"
 		else:
 			color = "green"
+		
+		display_data = (display_bearing, color, disabled)
+		if display_data == last_display_data:
+			return
+		
+		widget = drawing_area
 	
 		x, y, width, height = widget.get_allocation()
 		
@@ -561,7 +571,7 @@ class Gui():
 		
 		pixmap.draw_rectangle( widget.get_style().bg_gc[gtk.STATE_NORMAL],
 			True, minx, miny, maxx, maxy)
-		arrow_transformed = self.get_arrow_transformed(x, y, width, height, display_bearing)	
+		arrow_transformed = self.get_arrow_transformed(width, height, display_bearing)	
 			
 		
 		xgc.line_style = gtk.gdk.LINE_SOLID
@@ -584,18 +594,17 @@ class Gui():
 			pixmap, 0, 0, 0, 0, width, height)
 		return True
 
-	def get_arrow_transformed(self, x, y, width, height, angle):
-		u = 1.0/3.0 # Offset to center of arrow, calculated as 2-x = sqrt(1^2+(x+1)^2)
-		arrow = [(0, -2+u), (1, +1+u), (0,0+u), (-1, 1+u)]
-		multiply = height / (2*(2-u))
+	def get_arrow_transformed(self, width, height, angle):
+		arrow = [(0, -1.66), (1, +1.33), (0,0.33), (-1, 1.33)]
+		multiply = height / (2.0*1.66)
 		offset_x = width / 2 
 		offset_y = height / 2 
 		s = math.sin(math.radians(angle))
 		c = math.cos(math.radians(angle))
 		at = []
 		for (x, y) in arrow:
-			at.append((int(round(x * multiply * c + offset_x - y * multiply * s)),
-				int(round(y * multiply * c + offset_y + x * multiply * s))))
+			at.append((int(x * multiply * c + offset_x - y * multiply * s),
+				int(y * multiply * c + offset_y + x * multiply * s)))
 		return at
 		
 	def read_config(self):
@@ -686,6 +695,7 @@ class Gui():
 		return True
 		
 	def on_good_fix(self):
+		self.target_distance = self.gps_position.distance_to(self.target_position)
 		self.update_display()
 		self.has_fix  = True
 		self.draw_arrow()
@@ -700,7 +710,7 @@ class Gui():
 		
 	def update_display(self):
 		labelBearing.set_text("%d°" % self.gps_bearing)
-		display_dist = self.gps_position.distance_to(self.target_position)
+		display_dist = self.target_distance
 			
 		if display_dist >= 1000:
 			labelDist.set_text("%3dkm" % round(display_dist / 1000))
@@ -727,6 +737,8 @@ class Gui():
 
 
 class Gps_reader():
+
+	re_recv = re.compile('Q=([^ ]+)\s')
 	def __init__(self, gui):
 		#Thread.__init__(self)
 		self.gui = gui
@@ -744,48 +756,15 @@ class Gps_reader():
 		except:
 			self.status = "Could not connect to GPSD on Localhost, Port 2947"
 			print "Could not connect"
-			
-			
-			
-	def get_position(self):
-		try:
-			gpsd_connection.send("%s\r\n" % 'p')
-			pos = gpsd_connection.recv(8192)
-			p = re.compile('P=(.*?)\s*$')
-			match = p.search(pos)
-			text = match.group(1)
-			if (text == '?'):	
-				self.status = "No GPS signal"			
-				return None
-			[lat, lon] = [float(ll) for ll in text.split(' ')]
-			return Coordinate(lat, lon)
-		except:
-			#print "Fehler beim Auslesen der Daten"
-			return None
 		
-		
-	def get_track(self):
-		try:
-			gpsd_connection.send("%s\r\n" % 't')
-			pos = gpsd_connection.recv(8192)
-			p = re.compile('T=(.*?)\s*$')
-			match = p.search(pos)
-			text = match.group(1)
-			if (text == '?'):			
-				return None
-			return float(text)
-		except:
-			#print "Fehler beim Auslesen der Daten"
-			return None	
-
 	def get_data(self):
 		try:
 			gpsd_connection.send("%s\r\n" % 'o')
-			data = gpsd_connection.recv(8192)
+			data = gpsd_connection.recv(512)
 			gpsd_connection.send("%s\r\n" % 'q')
-			quality_data = gpsd_connection.recv(8192)
+			quality_data = gpsd_connection.recv(512)
 			try:
-				match = re.compile('Q=([^ ]+)\s').search(quality_data)
+				match = re_recv.search(quality_data)
 				sats = match.group(1)
 				if sats == '?':
 					sats = 0
@@ -835,5 +814,6 @@ class Gps_reader():
 
 if __name__ == "__main__":
 	gtk.gdk.threads_init()
+	#cProfile.run('gui = Gui()')
 	gui = Gui()
 
