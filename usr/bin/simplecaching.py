@@ -435,6 +435,12 @@ class Gui():
 		self.gps_speed = 0.0
 		self.gps_sats = 0
 		self.stored_targets = []
+		global arrow_transformed
+		global last_display_data
+		global last_arrow_bounds
+		arrow_transformed = None
+		last_display_data = None
+		last_arrow_bounds = None
 		
 		
 		# Dialogs
@@ -458,6 +464,7 @@ class Gui():
 		
 		global progressbar
 		progressbar = gtk.ProgressBar()
+		progressbar.set_text("")
 		table.attach(progressbar, 0, 3, 0, 1)
 
 		global labelAltitude
@@ -484,12 +491,15 @@ class Gui():
 		table.attach(buttonLoadStore, 0, 1, 5, 6)
 		buttonLoadStore.connect('clicked', self.stored_dialog.run)
 		
-		labelDist.modify_font(pango.FontDescription("sans 10"))
-		labelBearing.modify_font(pango.FontDescription("sans 8"))
-		labelAltitude.modify_font(pango.FontDescription("sans 8"))
-		buttonChange.child.modify_font(pango.FontDescription("sans 10"))
-		buttonSwitch.child.modify_font(pango.FontDescription("sans 10"))
-		buttonLoadStore.child.modify_font(pango.FontDescription("sans 5"))
+		font_big = pango.FontDescription("sans 10")
+		font_medium = pango.FontDescription("sans 8")
+		font_small = pango.FontDescription("sans 5")
+		labelDist.modify_font(font_big)
+		labelBearing.modify_font(font_medium)
+		labelAltitude.modify_font(font_medium)
+		buttonChange.child.modify_font(font_big)
+		buttonSwitch.child.modify_font(font_big)
+		buttonLoadStore.child.modify_font(font_small)
 		
 		global drawing_area
 		drawing_area = gtk.DrawingArea()
@@ -499,14 +509,9 @@ class Gui():
 		drawing_area.connect("configure_event", self.configure_event)
 		drawing_area.set_events(gtk.gdk.EXPOSURE_MASK)
 		table.attach(drawing_area, 0,3, 2, 3)
-		
-		global arrow_transformed
-		global last_display_data
-		arrow_transformed = None
-		last_display_data = None
 		self.window.show_all()	
 		self.read_config()
-		self.update_display()
+		#self.update_display()
 		self.update_target_display()
 		self.gps_thread = Gps_reader(self)
 		gobject.timeout_add(500, self.read_gps)
@@ -516,31 +521,46 @@ class Gui():
 		x , y, width, height = event.area
 		widget.window.draw_drawable(widget.get_style().fg_gc[gtk.STATE_NORMAL],
 			pixmap, x, y, x, y, width, height)
-		pixmap.draw_rectangle( widget.get_style().bg_gc[gtk.STATE_NORMAL],
-			True, x, y, width, height)
 			
 		return False
 
 	def configure_event(self, widget, event):
 		global pixmap
 		global xgc
+		global last_display_data
 		x, y, width, height = widget.get_allocation()
 		pixmap = gtk.gdk.Pixmap(widget.window, width, height)
-		
+		pixmap.draw_rectangle(widget.get_style().bg_gc[gtk.STATE_NORMAL],
+			True, 0, 0, width, height)
 		xgc = widget.window.new_gc()
+		xgc.line_width = 3
 		self.drawing_area_configured = True
-		self.draw_arrow()
+		last_display_data = None
 		
 	def draw_arrow(self):
 		if (not self.drawing_area_configured):
-			return
+			return False
 			
 		global arrow_transformed
-		global last_display_bearing
+		global last_display_data
+		global last_arrow_bounds
+		
+		disabled = not self.has_fix
+		widget = drawing_area
+		x, y, width, height = widget.get_allocation()
+		
+		if disabled:		
+			xgc.set_rgb_fg_color(gtk.gdk.color_parse("red"))
+			pixmap.draw_line(xgc, 0, 0, width, height)
+			pixmap.draw_line(xgc, 0, height, width, 0)
+			widget.window.draw_drawable(widget.get_style().fg_gc[gtk.STATE_NORMAL],
+			pixmap, 0, 0, 0, 0, width, height)
+		
+			last_display_data = None
+			return False
 			
 		display_bearing = self.gps_position.bearing_to(self.target_position) - self.gps_bearing
 		display_distance = self.target_distance
-		disabled = not self.has_fix
 		
 		if (display_distance < 50):
 			color = "red"
@@ -549,50 +569,38 @@ class Gui():
 		else:
 			color = "green"
 		
-		display_data = (display_bearing, color, disabled)
+		display_data = (display_bearing, color)
 		if display_data == last_display_data:
-			return
+			return False
 		
-		widget = drawing_area
-	
-		x, y, width, height = widget.get_allocation()
-		
-		xgc.set_rgb_fg_color(gtk.gdk.color_parse(color))
-		if (arrow_transformed != None):
-			minx = min(b[0] for b in arrow_transformed)-10
-			miny = min(b[1] for b in arrow_transformed)-10
-			maxx = max(b[0] for b in arrow_transformed)+10
-			maxy = max(b[1] for b in arrow_transformed)+10
+		if arrow_transformed != None and last_display_data != None and last_arrow_bounds != None:
+			minx, miny, maxx, maxy = last_arrow_bounds
 		else:
-			minx = x
-			miny = y
+			minx = 0
+			miny = 0
 			maxx = width
 			maxy = height
 		
 		pixmap.draw_rectangle( widget.get_style().bg_gc[gtk.STATE_NORMAL],
 			True, minx, miny, maxx, maxy)
 		arrow_transformed = self.get_arrow_transformed(width, height, display_bearing)	
-			
 		
-		xgc.line_style = gtk.gdk.LINE_SOLID
-		xgc.line_width = 5
+		minx = min(b[0] for b in arrow_transformed)-10
+		miny = min(b[1] for b in arrow_transformed)-10
+		maxx = max(b[0] for b in arrow_transformed)+10
+		maxy = max(b[1] for b in arrow_transformed)+10
+		last_arrow_bounds = [minx,  miny, maxx, maxy]
+			
+		xgc.set_rgb_fg_color(gtk.gdk.color_parse(color))
 		pixmap.draw_polygon(xgc, True, arrow_transformed)
 		xgc.set_rgb_fg_color(gtk.gdk.color_parse("black"))
-		pixmap.draw_polygon(xgc, False, arrow_transformed)
-		
-		
-		
-		if (disabled):		
-			xgc.line_width = 3
-			xgc.set_rgb_fg_color(gtk.gdk.color_parse("red"))
-			pixmap.draw_line(xgc, x, y, width, height)
-			xgc.set_rgb_fg_color(gtk.gdk.color_parse("red"))
-			pixmap.draw_line(xgc, x, height, width, y)
-			
+		pixmap.draw_polygon(xgc, False, arrow_transformed)	
 		
 		widget.window.draw_drawable(widget.get_style().fg_gc[gtk.STATE_NORMAL],
 			pixmap, 0, 0, 0, 0, width, height)
-		return True
+		
+		last_display_data = display_data
+		return False
 
 	def get_arrow_transformed(self, width, height, angle):
 		arrow = [(0, -1.66), (1, +1.33), (0,0.33), (-1, 1.33)]
@@ -610,14 +618,17 @@ class Gui():
 	def read_config(self):
 		config = ConfigParser.ConfigParser()
 		config.read(os.path.expanduser('~/.simplecaching.conf'))
-		try:
+		if not config.has_section("saved"): #or not config.has_option("saved","last_target_lat") or not has_option("saved","last_target_lon"):
+			target_lat = 49.23456
+			target_lon = 6.23456
+		else:
 			target_lat = config.get("saved","last_target_lat",0)
 			target_lon = config.get("saved", "last_target_lon",0)
-		except (ConfigParser.NoSectionError, ConfigParser.NoOptionError):
-			target_lat = 49.34567
-			target_lon = 6.2345
+
 		self.target_position = Coordinate(float(target_lat), float(target_lon))
-		
+		if not config.has_section("stored targets"):
+			return
+			
 		i = 0
 		self.stored_targets = []
 		while (config.has_option("stored targets", "stored-%d-lat" % i) and 
@@ -679,8 +690,6 @@ class Gui():
 		self.update_target_display()
 
 	def read_gps(self):
-		#gps_position = self.gps_thread.get_position()
-		#gps_track = self.gps_thread.get_track()
 		gps_data = self.gps_thread.get_data()
 		if (gps_data['position'] != None):
 			self.gps_position = gps_data['position']
@@ -710,14 +719,13 @@ class Gui():
 		
 	def update_display(self):
 		labelBearing.set_text("%d°" % self.gps_bearing)
-		display_dist = self.target_distance
 			
-		if display_dist >= 1000:
-			labelDist.set_text("%3dkm" % round(display_dist / 1000))
+		if self.target_distance >= 1000:
+			labelDist.set_text("%3dkm" % round(self.target_distance / 1000))
 		elif display_dist >= 100:
-			labelDist.set_text("%3dm" % round(display_dist))
+			labelDist.set_text("%3dm" % round(self.target_distance))
 		else:
-			labelDist.set_text("%2.1fm" % round(display_dist,1))
+			labelDist.set_text("%2.1fm" % round(self.target_distance,1))
 
 		labelAltitude.set_text("%3dm" % self.gps_altitude)
 		labelLatLon.set_text("Current: %s / %s" % (self.gps_position.get_lat(self.format), self.gps_position.get_lon(self.format)))
@@ -731,7 +739,6 @@ class Gui():
 		
 	
 	def destroy(self, target):
-		self.gps_thread.stopped = True
 		gtk.main_quit()
 
 
@@ -740,11 +747,9 @@ class Gps_reader():
 
 	re_recv = re.compile('Q=([^ ]+)\s')
 	def __init__(self, gui):
-		#Thread.__init__(self)
 		self.gui = gui
 		self.status = "connecting..."
-		self.connect();
-		self.stopped = False
+		self.connect()
 		
 	
 	def connect(self):
@@ -814,6 +819,5 @@ class Gps_reader():
 
 if __name__ == "__main__":
 	gtk.gdk.threads_init()
-	#cProfile.run('gui = Gui()')
 	gui = Gui()
 
