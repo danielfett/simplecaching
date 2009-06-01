@@ -697,9 +697,11 @@ class Gui():
 			self.gps_altitude = gps_data['altitude']
 			self.gps_speed = gps_data['speed']
 			self.gps_sats = gps_data['sats']
+			self.gps_sats_known = gps_data['sats_known']
 			self.on_good_fix()
 		else:
 			self.gps_sats = gps_data['sats']
+			self.gps_sats_known = gps_data['sats_known']
 			self.on_no_fix()
 		return True
 		
@@ -732,7 +734,7 @@ class Gui():
 
 	def update_progressbar(self):
 		progressbar.set_fraction(float(self.gps_sats)/12.0)
-		progressbar.set_text("Satellites: %d/12" % self.gps_sats)
+		progressbar.set_text("Satellites: %d/%d" % (self.gps_sats, self.gps_sats_known))
 		
 	def update_target_display(self):
 		labelTargetLatLon.set_text("Target: %s / %s" % (self.target_position.get_lat(self.format), self.target_position.get_lon(self.format)))
@@ -744,8 +746,6 @@ class Gui():
 
 
 class Gps_reader():
-
-	re_recv = re.compile('Q=([^ ]+)\s')
 	def __init__(self, gui):
 		self.gui = gui
 		self.status = "connecting..."
@@ -766,17 +766,27 @@ class Gps_reader():
 		try:
 			gpsd_connection.send("%s\r\n" % 'o')
 			data = gpsd_connection.recv(512)
-			gpsd_connection.send("%s\r\n" % 'q')
+			gpsd_connection.send("%s\r\n" % 'y')
 			quality_data = gpsd_connection.recv(512)
-			try:
-				match = re_recv.search(quality_data)
-				sats = match.group(1)
-				if sats == '?':
-					sats = 0
-			except:
-				# Number of satellites could not be determined
+			
+			# 1: Parse Quality Data
+			
+			# example output:
+			# GPSD,Y=- 1243847265.000 10:32 3 105 0 0:2 36 303 20 0:16 9 65 26 
+			#  1:13 87 259 35 1:4 60 251 30 1:23 54 60 37 1:25 51 149 24 0:8 2 
+			#  188 0 0:7 33 168 24 1:20 26 110 28 1:
+			
+			if quality_data == "GPSD,Y=?":
 				sats = 0
-				
+				sats_known = 0
+			else:
+				sats = 0
+				groups = quality_data.split(':')
+				sats_known = int(groups[0].split(' ')[2])
+				for i in range(1, sats_known):
+					if groups[i].split(' ')[4] == "1":
+						sats = sats + 1
+							
 			if data.strip() == "GPSD,O=?":
 				self.status = "No GPS signal"
 				return {
@@ -784,8 +794,11 @@ class Gps_reader():
 					'altitude': None,
 					'bearing': None,
 					'speed': None,
-					'sats': int(sats)
+					'sats': sats,
+					'sats_known': sats_known
 				}
+				
+			# 2: Get current position, altitude, bearing and speed
 			
 			# example output:
 			# GPSD,O=- 1243530779.000 ? 49.736876 6.686998 271.49 1.20 1.61 49.8566 0.050 -0.175 ? ? ? 3
@@ -802,7 +815,8 @@ class Gps_reader():
 				'altitude': float(alt),
 				'bearing': float(track),
 				'speed': float(speed),
-				'sats': int(sats)
+				'sats': int(sats),
+				'sats_known': sats_known
 			}
 		except:
 			#print "Fehler beim Auslesen der Daten."
@@ -811,7 +825,8 @@ class Gps_reader():
 				'altitude': None,
 				'bearing': None,
 				'speed': None,
-				'sats': 0
+				'sats': 0,
+				'sats_known': 0
 			}
 
 		
